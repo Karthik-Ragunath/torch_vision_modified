@@ -675,6 +675,7 @@ class RoIHeads(nn.Module):
         device = class_logits.device
         num_classes = class_logits.shape[-1]
         self.num_classes = num_classes
+        print("Num Classes:", num_classes)
         boxes_per_image = [boxes_in_image.shape[0] for boxes_in_image in proposals]
         pred_boxes = self.box_coder.decode(box_regression, proposals)
         
@@ -747,7 +748,10 @@ class RoIHeads(nn.Module):
     def centered_cov_torch(self, x):
         print("X Shape:", x.shape)
         n = x.shape[0]
+        print("N:", n)
+        n = 2 if n <= 1 else n
         res = 1 / (n - 1) * x.t().mm(x)
+        print("Res Shape:", res.shape)
         return res
     
 
@@ -755,11 +759,11 @@ class RoIHeads(nn.Module):
         with torch.no_grad():
             # print("Embeddings Shape:", embeddings.shape, "Labels Shape:", labels.shape, "Num Classes:", num_classes)
             print("Embeddings Type:", type(embeddings), "Labels Type:", type(labels), "Num Classes:", num_classes, "Embeddings Shape:", embeddings.shape)
-            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == (c + 1)], dim=0) for c in range(num_classes)])
+            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == (c)], dim=0) for c in range(num_classes)])
             print("Classwise Mean Features Shape:", classwise_mean_features.shape, "Embeddings Shape:", embeddings.shape, "Labels:", labels)
-            print("Printer:", labels == (0 + 1))
+            # print("Printer:", labels == (0 + 1))
             classwise_cov_features = torch.stack(
-                [self.centered_cov_torch(embeddings[labels == (c + 1)] - classwise_mean_features[c]) for c in range(num_classes)]
+                [self.centered_cov_torch(embeddings[labels == (c)] - classwise_mean_features[c]) for c in range(num_classes)]
             )
             print("Classwise Covariance Matrix Shape:", classwise_cov_features.shape)
         # gmm = None
@@ -858,7 +862,7 @@ class RoIHeads(nn.Module):
             print("Labels Type:", type(labels), "Labels Len:", len(labels))
             labels_per_image = labels[0]
             print("Labels Shape:", labels_per_image.shape)
-            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels_per_image, self.num_classes-1)
+            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels_per_image, self.num_classes)
 
         if self.has_mask():
             mask_proposals = [p["boxes"] for p in result]
