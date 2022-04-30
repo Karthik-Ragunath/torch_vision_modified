@@ -743,14 +743,23 @@ class RoIHeads(nn.Module):
         print("ALL BOXES LEN:", len(all_boxes), "ALL SCORES:", all_scores, "ALL SCORES LEN:", len(all_scores[0]), "Feature Vectors Shape:", feature_vectors.shape)
         return all_boxes, all_scores, all_labels, feature_vectors
     
+    
+    def centered_cov_torch(self, x):
+        print("X Shape:", x.shape)
+        n = x.shape[0]
+        res = 1 / (n - 1) * x.t().mm(x)
+        return res
+    
 
     def gmm_fit(self, embeddings, labels, num_classes):
         with torch.no_grad():
-            print("Embeddings Shape:", embeddings.shape, "Labels Shape:", labels.shape, "Num Classes:", num_classes)
-            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == c], dim=0) for c in range(num_classes)])
-            print("Classwise Mean Features Shape:", classwise_mean_features.shape)
+            # print("Embeddings Shape:", embeddings.shape, "Labels Shape:", labels.shape, "Num Classes:", num_classes)
+            print("Embeddings Type:", type(embeddings), "Labels Type:", type(labels), "Num Classes:", num_classes, "Embeddings Shape:", embeddings.shape)
+            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == (c + 1)], dim=0) for c in range(num_classes)])
+            print("Classwise Mean Features Shape:", classwise_mean_features.shape, "Embeddings Shape:", embeddings.shape, "Labels:", labels)
+            print("Printer:", labels == (0 + 1))
             classwise_cov_features = torch.stack(
-                [centered_cov_torch(embeddings[labels == c] - classwise_mean_features[c]) for c in range(num_classes)]
+                [self.centered_cov_torch(embeddings[labels == (c + 1)] - classwise_mean_features[c]) for c in range(num_classes)]
             )
             print("Classwise Covariance Matrix Shape:", classwise_cov_features.shape)
         # gmm = None
@@ -847,6 +856,9 @@ class RoIHeads(nn.Module):
                 )
             feature_vectors = torch.tensor(feature_vectors)
             print(feature_vectors.shape)
+            print("Labels Type:", type(labels), "Labels Len:", len(labels))
+            labels = labels[0]
+            print("Labels Shape:", labels.shape)
             gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels, self.num_classes-1)
             # print("*" * 5, "Result:", result, "res len:", len(result), "*" * 5)
 
