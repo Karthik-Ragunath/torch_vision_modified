@@ -830,7 +830,6 @@ class RoIHeads(nn.Module):
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
         class_logits, box_regression, feature_vectors = self.box_predictor(box_features)
-        # print("*"*5, "Feature Vectors:", feature_vectors.shape, "*"*5)
         
         result: List[Dict[str, torch.Tensor]] = []
         losses = {}
@@ -857,10 +856,9 @@ class RoIHeads(nn.Module):
             feature_vectors = torch.tensor(feature_vectors)
             print(feature_vectors.shape)
             print("Labels Type:", type(labels), "Labels Len:", len(labels))
-            labels = labels[0]
-            print("Labels Shape:", labels.shape)
-            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels, self.num_classes-1)
-            # print("*" * 5, "Result:", result, "res len:", len(result), "*" * 5)
+            labels_per_image = labels[0]
+            print("Labels Shape:", labels_per_image.shape)
+            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels_per_image, self.num_classes-1)
 
         if self.has_mask():
             mask_proposals = [p["boxes"] for p in result]
