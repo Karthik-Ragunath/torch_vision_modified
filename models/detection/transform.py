@@ -223,8 +223,7 @@ class GeneralizedRCNNTransform(nn.Module):
     def postprocess(self,
                     result: List[Dict[str, Tensor]],
                     image_shapes: List[Tuple[int, int]],
-                    original_image_sizes: List[Tuple[int, int]],
-                    proposal_maps=None
+                    original_image_sizes: List[Tuple[int, int]]
                     ) -> List[Dict[str, Tensor]]:
         if self.training:
             return result
@@ -232,8 +231,6 @@ class GeneralizedRCNNTransform(nn.Module):
             boxes = pred["boxes"]
             boxes = resize_boxes(boxes, im_s, o_im_s)
             result[i]["boxes"] = boxes
-            if proposal_maps != None:
-                result[i]['proposals'] = proposal_maps[i]
             if "masks" in pred:
                 masks = pred["masks"]
                 masks = paste_masks_in_image(masks, boxes, o_im_s)

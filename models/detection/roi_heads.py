@@ -11,6 +11,7 @@ from torchvision.ops import roi_align
 from . import _utils as det_utils
 
 from typing import Optional, List, Dict, Tuple
+from copy import deepcopy
 
 DOUBLE_INFO = torch.finfo(torch.double)
 JITTERS = [0, DOUBLE_INFO.tiny] + [10 ** exp for exp in range(-308, 0, 1)]
@@ -682,13 +683,16 @@ class RoIHeads(nn.Module):
         print("Class Logits:", class_logits, "Shape:", class_logits.shape)
         pred_scores = F.softmax(class_logits, -1)
 
-        print("Pred Scores:", pred_scores, "Shape:", pred_scores.shape)
+        print("Pred Scores Before:", pred_scores, "Shape:", pred_scores.shape)
+        print("Pred Boxes Shape Before:", pred_boxes.shape)
         pred_boxes_list = pred_boxes.split(boxes_per_image, 0)
         pred_scores_list = pred_scores.split(boxes_per_image, 0)
-
+        print("Pred Boxes Shape After:", len(pred_boxes_list))
+        print("Pred Scores After:", pred_scores_list, "Shape:", len(pred_scores_list))
         all_boxes = []
         all_scores = []
         all_labels = []
+        all_features = []
         
         print("*"*5, "Pred Boxes List Shape:", pred_boxes_list[0].shape, "*"*5)
         print("#"*5, "Feature Vectors Shape:", feature_vectors.shape, "#"*5)
@@ -697,9 +701,10 @@ class RoIHeads(nn.Module):
         feature_vectors = torch.repeat_interleave(feature_vectors, 4, dim=0)
         print("Repeated Feature Vectors Shape:", feature_vectors.shape)
         print("Feature Vecs Repeated:", feature_vectors[:5])
-        
+        feature_start_index = 0
         for index, (boxes, scores, image_shape) in enumerate(zip(pred_boxes_list, pred_scores_list, image_shapes)):
-            
+            feature_vectors_copy = feature_vectors.clone()[feature_start_index:(feature_start_index + pred_boxes_list[index].shape[0] * 4)]
+            feature_start_index = (feature_start_index + pred_boxes_list[index].shape[0] * 4)
             print("Checkpoint -2:", "Boxes Shape:", boxes.shape, "Scores Shape:", scores.shape)
             boxes = box_ops.clip_boxes_to_image(boxes, image_shape)
 
@@ -723,26 +728,30 @@ class RoIHeads(nn.Module):
             print("After Transformation First 4 Boxes:", boxes[:4])
             # remove low scoring boxes
             inds = torch.where(scores > self.score_thresh)[0]
-            boxes, scores, labels = boxes[inds], scores[inds], labels[inds]
+            boxes, scores, labels, feature_vectors_copy = boxes[inds], scores[inds], labels[inds], feature_vectors_copy[inds]
 
             # remove empty boxes
             keep = box_ops.remove_small_boxes(boxes, min_size=1e-2)
-            boxes, scores, labels, feature_vectors = boxes[keep], scores[keep], labels[keep], feature_vectors[keep]
-            print("CheckPoint1:", "Index:", index, "Keep:", keep, "Shape:", boxes.shape)
+            print("Keep Len:", len(keep), "Boxes Shape:", boxes.shape, "Feature Vectors Shape:", feature_vectors_copy.shape)
+            boxes, scores, labels, feature_vectors_copy = boxes[keep], scores[keep], labels[keep], feature_vectors_copy[keep]
+            # print("CheckPoint1:", "Index:", index, "Keep:", keep, "Shape:", boxes.shape)
             
             # non-maximum suppression, independentl qy done per class
             keep = box_ops.batched_nms(boxes, scores, labels, self.nms_thresh)
             # keep only topk scoring predictions
+            print("Len of keep:", len(keep), "Detections Per Image:", self.detections_per_img)
             keep = keep[:self.detections_per_img]
-            boxes, scores, labels, feature_vectors = boxes[keep], scores[keep], labels[keep], feature_vectors[keep]
+            print("Boxes Tensor Shape:", boxes.shape, "Feature Vectors Shape:", feature_vectors_copy.shape)
+            boxes, scores, labels, feature_vectors_copy = boxes[keep], scores[keep], labels[keep], feature_vectors_copy[keep]
             
-            print("CheckPoint2:", "Index:", index, "Keep:", keep, "Shape:", boxes.shape)
+            # print("CheckPoint2:", "Index:", index, "Keep:", keep, "Shape:", boxes.shape)
             
             all_boxes.append(boxes)
             all_scores.append(scores)
             all_labels.append(labels)
-        print("ALL BOXES LEN:", len(all_boxes), "ALL SCORES:", all_scores, "ALL SCORES LEN:", len(all_scores[0]), "Feature Vectors Shape:", feature_vectors.shape)
-        return all_boxes, all_scores, all_labels, feature_vectors
+            all_features.append(feature_vectors_copy)
+        print("ALL BOXES LEN:", len(all_boxes), "ALL SCORES:", all_scores, "ALL SCORES LEN:", len(all_scores[0]), "Feature Vectors Shape:", len(all_features), all_features[0].shape)
+        return all_boxes, all_scores, all_labels, all_features
     
     
     def centered_cov_torch(self, x):
@@ -759,11 +768,11 @@ class RoIHeads(nn.Module):
         with torch.no_grad():
             # print("Embeddings Shape:", embeddings.shape, "Labels Shape:", labels.shape, "Num Classes:", num_classes)
             print("Embeddings Type:", type(embeddings), "Labels Type:", type(labels), "Num Classes:", num_classes, "Embeddings Shape:", embeddings.shape)
-            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == (c)], dim=0) for c in range(num_classes)])
+            classwise_mean_features = torch.stack([torch.mean(embeddings[labels == (c + 1)], dim=0) for c in range(num_classes)])
             print("Classwise Mean Features Shape:", classwise_mean_features.shape, "Embeddings Shape:", embeddings.shape, "Labels:", labels)
             # print("Printer:", labels == (0 + 1))
             classwise_cov_features = torch.stack(
-                [self.centered_cov_torch(embeddings[labels == (c)] - classwise_mean_features[c]) for c in range(num_classes)]
+                [self.centered_cov_torch(embeddings[labels == (c + 1)] - classwise_mean_features[c]) for c in range(num_classes)]
             )
             print("Classwise Covariance Matrix Shape:", classwise_cov_features.shape)
         # gmm = None
@@ -833,6 +842,7 @@ class RoIHeads(nn.Module):
 
         box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
+        print("Box Features Shape:", box_features.shape)
         class_logits, box_regression, feature_vectors = self.box_predictor(box_features)
         
         result: List[Dict[str, torch.Tensor]] = []
@@ -857,12 +867,19 @@ class RoIHeads(nn.Module):
                         "feature_vector": feature_vectors[i], 
                     }
                 )
-            feature_vectors = torch.tensor(feature_vectors)
-            print(feature_vectors.shape)
+            print("Type (feature_vectors):", type(feature_vectors))
+            print("boxes len:", len(boxes), "FeatureVector Len and Shape:", len(feature_vectors), feature_vectors[0].shape)
             print("Labels Type:", type(labels), "Labels Len:", len(labels))
-            labels_per_image = labels[0]
-            print("Labels Shape:", labels_per_image.shape)
-            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors, labels_per_image, self.num_classes)
+            feature_vectors_concat = torch.tensor([])
+            labels_concat = torch.tensor([])
+            for i in range(len(labels)):
+                if feature_vectors_concat.numel() == 0:
+                    feature_vectors_concat = feature_vectors[i]
+                    labels_concat = labels[i]
+                else:
+                    feature_vectors_concat = torch.concat((feature_vectors_concat, feature_vectors[i]), dim=0)
+                    labels_concat = torch.concat((labels_concat, labels[i]), dim=0)
+            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors_concat, labels_concat, self.num_classes - 1)
 
         if self.has_mask():
             mask_proposals = [p["boxes"] for p in result]

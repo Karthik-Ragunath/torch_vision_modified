@@ -255,6 +255,7 @@ class RegionProposalNetwork(torch.nn.Module):
 
         final_boxes = []
         final_scores = []
+        print("porposals shape:", proposals.shape, "objectness_prob shape:", objectness_prob.shape, "levels shape:", levels.shape, "image_shapes:", image_shapes)
         for boxes, scores, lvl, img_shape in zip(proposals, objectness_prob, levels, image_shapes):
             boxes = box_ops.clip_boxes_to_image(boxes, img_shape)
 
@@ -344,6 +345,7 @@ class RegionProposalNetwork(torch.nn.Module):
         anchors = self.anchor_generator(images, features)
 
         num_images = len(anchors)
+        print('Num Images (Anchors):', num_images)
         num_anchors_per_level_shape_tensors = [o[0].shape for o in objectness]
         num_anchors_per_level = [s[0] * s[1] * s[2] for s in num_anchors_per_level_shape_tensors]
         objectness, pred_bbox_deltas = \
@@ -352,9 +354,11 @@ class RegionProposalNetwork(torch.nn.Module):
         # note that we detach the deltas because Faster R-CNN do not backprop through
         # the proposals
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
+        print("Old Proposals Shape:", proposals.shape)
         proposals = proposals.view(num_images, -1, 4)
+        print("New Proposals Shape:", proposals.shape)
         boxes, scores = self.filter_proposals(proposals, objectness, images.image_sizes, num_anchors_per_level)
-        print("*"*50, "Proposals:", proposals, "*"*50)
+        print("*"*50, "Boxes Shape:", len(boxes), boxes[0].shape, boxes[1].shape, "Scores Shape:", len(scores), scores[0].shape, scores[1].shape, "Proposals Shape:", proposals.shape, "*"*50)
         losses = {}
         if self.training:
             assert targets is not None
@@ -366,4 +370,4 @@ class RegionProposalNetwork(torch.nn.Module):
                 "loss_objectness": loss_objectness,
                 "loss_rpn_box_reg": loss_rpn_box_reg,
             }
-        return boxes, losses, proposals
+        return boxes, losses
