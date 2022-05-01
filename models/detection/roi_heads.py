@@ -12,6 +12,8 @@ from . import _utils as det_utils
 
 from typing import Optional, List, Dict, Tuple
 from copy import deepcopy
+import json
+from collections import defaultdict
 
 DOUBLE_INFO = torch.finfo(torch.double)
 JITTERS = [0, DOUBLE_INFO.tiny] + [10 ** exp for exp in range(-308, 0, 1)]
@@ -763,6 +765,10 @@ class RoIHeads(nn.Module):
         print("Res Shape:", res.shape)
         return res
     
+    def gmm_forward(self, gaussians_model, embedding_tensor):
+        log_probs_B_Y = gaussians_model.log_prob(embedding_tensor[:, None, :])
+        return log_probs_B_Y
+    
 
     def gmm_fit(self, embeddings, labels, num_classes):
         with torch.no_grad():
@@ -879,7 +885,16 @@ class RoIHeads(nn.Module):
                 else:
                     feature_vectors_concat = torch.concat((feature_vectors_concat, feature_vectors[i]), dim=0)
                     labels_concat = torch.concat((labels_concat, labels[i]), dim=0)
-            gaussians_model, jitter_eps = self.gmm_fit(feature_vectors_concat, labels_concat, self.num_classes - 1)
+            gaussian_model, jitter_eps = self.gmm_fit(feature_vectors_concat, labels_concat, self.num_classes - 1)
+            log_probabilities = self.gmm_forward(gaussian_model, feature_vectors_concat)
+            print("Log Probabilities Shape:", log_probabilities.shape)
+            label_log_probs_dict = defaultdict(lambda: defaultdict(list))
+            for index in range(labels_concat.shape[0]):
+                label_log_probs_dict[index]['label'] = str(labels_concat[index])
+                label_log_probs_dict[index]['log_probs'] = str(list(log_probabilities[index].detach().numpy()))
+                
+            with open('log_probs_training.json', 'w') as fp:
+                json.dump(label_log_probs_dict, fp, indent=4)
 
         if self.has_mask():
             mask_proposals = [p["boxes"] for p in result]
