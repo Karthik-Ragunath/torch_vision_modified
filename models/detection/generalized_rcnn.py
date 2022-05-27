@@ -95,6 +95,7 @@ class GeneralizedRCNN(nn.Module):
             features = OrderedDict([('0', features)])
         print('*' * 50, "Len (features):", len(features.keys()), "Features Shape:", features.keys(), "Image Shape:", images.tensors.shape, '*' * 50)
         proposals, proposal_losses = self.rpn(images, features, targets)
+        print("Proposals:", proposals)
         detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
         detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
         print("Detections:", detections, "Image Sizes:", images.image_sizes)

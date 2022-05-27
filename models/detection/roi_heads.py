@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Tuple
 from copy import deepcopy
 import json
 from collections import defaultdict
+import os
 
 DOUBLE_INFO = torch.finfo(torch.double)
 JITTERS = [0, DOUBLE_INFO.tiny] + [10 ** exp for exp in range(-308, 0, 1)]
@@ -878,21 +879,28 @@ class RoIHeads(nn.Module):
             print("Labels Type:", type(labels), "Labels Len:", len(labels))
             feature_vectors_concat = torch.tensor([])
             labels_concat = torch.tensor([])
+            boxes_concat = torch.tensor([])
             for i in range(len(labels)):
                 if feature_vectors_concat.numel() == 0:
                     feature_vectors_concat = feature_vectors[i]
                     labels_concat = labels[i]
+                    boxes_concat = boxes[i]
                 else:
                     feature_vectors_concat = torch.concat((feature_vectors_concat, feature_vectors[i]), dim=0)
                     labels_concat = torch.concat((labels_concat, labels[i]), dim=0)
+                    boxes_concat = torch.concat((boxes_concat, boxes[i]), dim=0)
             gaussian_model, jitter_eps = self.gmm_fit(feature_vectors_concat, labels_concat, self.num_classes - 1)
+            print('GMM Type:', type(gaussian_model))
+            if not os.path.isfile("/media/karthikragunath/Personal-Data/DDU/gaussian_model.pt"):
+                torch.save(gaussian_model, "/media/karthikragunath/Personal-Data/DDU/gaussian_model.pt")
             log_probabilities = self.gmm_forward(gaussian_model, feature_vectors_concat)
+            print("Boxes Concat:", boxes_concat)
             print("Log Probabilities Shape:", log_probabilities.shape)
             label_log_probs_dict = defaultdict(lambda: defaultdict(list))
             for index in range(labels_concat.shape[0]):
                 label_log_probs_dict[index]['label'] = str(labels_concat[index])
                 label_log_probs_dict[index]['log_probs'] = str(list(log_probabilities[index].detach().numpy()))
-                
+                label_log_probs_dict[index]['boxes'] = str(boxes_concat[index])
             with open('log_probs_training.json', 'w') as fp:
                 json.dump(label_log_probs_dict, fp, indent=4)
 

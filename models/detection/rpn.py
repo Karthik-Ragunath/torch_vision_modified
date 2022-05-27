@@ -353,6 +353,7 @@ class RegionProposalNetwork(torch.nn.Module):
         # apply pred_bbox_deltas to anchors to obtain the decoded proposals
         # note that we detach the deltas because Faster R-CNN do not backprop through
         # the proposals
+        print("A:", anchors, 'pbox deltas:', pred_bbox_deltas)
         proposals = self.box_coder.decode(pred_bbox_deltas.detach(), anchors)
         print("Old Proposals Shape:", proposals.shape)
         proposals = proposals.view(num_images, -1, 4)
